@@ -1,0 +1,4 @@
+{
+    "jwtPrivateKey": "chatting_private_key",
+    "uri": "mongodb_uri"
+}
