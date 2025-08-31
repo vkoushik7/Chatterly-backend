@@ -4,46 +4,43 @@ const Joi = require('joi');
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-    name:{
+    name: {
         type: String,
         required: true,
         minlength: 3,
         maxlength: 50
     },
-    username:{
+    username: {
         type: String,
         required: true,
         minlength: 5,
         maxlength: 20,
-        unique: true
+        unique: true,
+        index: true
     },
     email: {
-        type:String,
+        type: String,
         required: true,
         minlength: 5,
         maxlength: 255,
         unique: true
     },
-    password:{
-        type:String,
+    password: {
+        type: String,
         required: true,
         minlength: 5,
         maxlength: 1024
     },
-    conversations: [{
-        partnerUsername: String,
-        recentMessage: String,
-        conversationId: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Conversation'
-        },
-        timestamp: Date,
-    }]
-});
+    lastSeen: { type: Date, default: null },
+    bio: { type: String, maxlength: 500, default: null },
+    avatarUrl: { type: String, default: null }
+}, { timestamps: true });
 
 
+userSchema.index({ lastSeen: -1 });
 userSchema.methods.generateAuthToken = function(){
-    const token = jwt.sign({_id: this._id}, process.env.jwtPrivateKey);
+    const expiresIn = process.env.JWT_EXPIRES_IN || '7d'; // e.g., '1h', '7d'
+    const token = jwt.sign({ _id: this._id }, process.env.jwtPrivateKey, { expiresIn });
     return token;
 }
 

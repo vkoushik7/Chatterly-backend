@@ -3,29 +3,8 @@ const _ = require('lodash');
 const Joi = require('joi');
 const {User} = require('../models/user');
 const express = require('express');
-const passport = require('passport');
 const router = express.Router();
 
-router.get('/auth/google', 
-    passport.authenticate('google', {scope:['profile']})
-);
-
-router.get('/auth/google/callback',
-    passport.authenticate('google', {failureRedirect: '/login'}),
-    function (req,res) {
-        res.redirect('/dashboard');
-    }
-);
-
-passport.serializeUser(function(user, done) {
-    done(null, user.id);
-  });
-  
-  passport.deserializeUser(function(id, done) {
-    User.findById(id, function(err, user) {
-      done(err, user);
-    });
-  });
 
 router.get('/', (req,res) => {
     res.send('send post request to /login');
@@ -42,7 +21,9 @@ router.post('/', async (req,res) => {
     if (!pswd) return res.status(400).send('Invalid email or password');
     
     const token = user.generateAuthToken();
-    res.send(token);
+    // decode to get exp for client-side handling
+    const decoded = require('jsonwebtoken').decode(token);
+    res.status(200).json({ token, exp: decoded && decoded.exp ? decoded.exp * 1000 : null });
 });
 
 function validate(req){

@@ -8,6 +8,7 @@ const bcrypt = require('bcrypt');
 router.get('/', (req,res) => {
     res.send('send post request to /signup');
 });
+
 router.post('/', async (req,res) => {
 
     const {error} = validate(req.body);
@@ -24,8 +25,15 @@ router.post('/', async (req,res) => {
     user.password = await bcrypt.hash(user.password, salt);
     await user.save();
 
-    const token = user.generateAuthToken();
-    res.header('x-auth-token',token).send(_.pick(user, ['_id','name','username','email']));
+        const token = user.generateAuthToken();
+        const decoded = require('jsonwebtoken').decode(token);
+        res.header('x-auth-token', token)
+             .status(201)
+             .json({
+                 token,
+                 exp: decoded && decoded.exp ? decoded.exp * 1000 : null,
+                 user: _.pick(user, ['_id','name','username','email'])
+             });
 });
 
 module.exports = router;

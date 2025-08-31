@@ -4,4 +4,4 @@ COPY package*.json .
 RUN npm install
 COPY . .
 EXPOSE 3000
-CMD ["pm2-runtime","index.js"]
+CMD ["npx","pm2-runtime","index.js"]
