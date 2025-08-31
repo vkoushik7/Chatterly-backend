@@ -34,7 +34,8 @@ router.get('/:username',auth, async (req,res) => {
         res.status(200).json({
             conversationId: chat.conversationId,
             messages: ordered,
-            nextCursor: chat.nextCursor
+            nextCursor: chat.nextCursor,
+            readReceipts: chat.readReceipts
         });
     }
     catch(ex) {
@@ -92,6 +93,15 @@ router.post('/:username/read', auth, async (req, res) => {
                 lastReadMessageId: result.lastReadMessageId,
                 at: result.readAt
             });
+            // Also update Redis message window readReceipts
+            try {
+                const { updateReadReceipts } = require('../services/messageCache');
+                await updateReadReceipts(result.conversationId, {
+                    userId: String(req.user._id),
+                    lastReadMessageId: result.lastReadMessageId,
+                    at: result.readAt
+                });
+            } catch {}
         }
         return res.status(200).json({ ok: true, ...result });
     } catch (ex) {

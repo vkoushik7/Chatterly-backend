@@ -69,6 +69,7 @@ async function getRecentMessages(userId, limit = 20, beforeUpdatedAt) {
 
 // Chat history with cursor pagination (beforeMessageId). Returns newest first.
 async function getChatHistory(userId, targetUsername, limit = 20, beforeMessageId) {
+    const { getWindow, setWindow } = require('./messageCache');
     const [user, targetUser] = await Promise.all([
         User.findById(userId).select('_id'),
         User.findOne({ username: targetUsername }).select('_id username')
@@ -77,6 +78,14 @@ async function getChatHistory(userId, targetUsername, limit = 20, beforeMessageI
     if (!targetUser) throw new Error('Receiver User not found!');
 
     const conversation = await findOrCreateDirectConversation(user._id, targetUser._id);
+
+    // If asking for the latest window (no cursor) and limit <= 20, try Redis cache first
+    if (!beforeMessageId && limit <= 20) {
+        const cached = await getWindow(conversation._id.toString());
+        if (cached && Array.isArray(cached.messages) && cached.messages.length) {
+            return { conversationId: conversation._id, messages: cached.messages, nextCursor: cached.nextCursor, readReceipts: cached.readReceipts };
+        }
+    }
 
     const msgQuery = { conversationId: conversation._id };
     if (beforeMessageId) {
@@ -88,11 +97,33 @@ async function getChatHistory(userId, targetUsername, limit = 20, beforeMessageI
         .lean();
 
     const nextCursor = messages.length === limit ? messages[messages.length - 1]._id : null;
-    // console.log(messages);
-    return { conversationId: conversation._id, messages, nextCursor };
+    // Build read receipt info for both participants
+    const meP = (conversation.participants || []).find(p => p.userId.toString() === user._id.toString());
+    const otherP = (conversation.participants || []).find(p => p.userId.toString() === targetUser._id.toString());
+    const readReceipts = {
+        me: {
+            userId: user._id.toString(),
+            lastReadMessageId: meP && meP.lastReadMessageId ? meP.lastReadMessageId.toString() : null,
+            lastReadAt: meP ? meP.lastReadAt : null
+        },
+        partner: {
+            userId: targetUser._id.toString(),
+            lastReadMessageId: otherP && otherP.lastReadMessageId ? otherP.lastReadMessageId.toString() : null,
+            lastReadAt: otherP ? otherP.lastReadAt : null
+        }
+    };
+    const result = { conversationId: conversation._id, messages, nextCursor, readReceipts };
+    // Save to Redis if latest page
+    if (!beforeMessageId && limit <= 20) {
+        try {
+            await setWindow(conversation._id.toString(), { messages, nextCursor, readReceipts });
+        } catch {}
+    }
+    return result;
 }
 
 async function sendMessage(userId, targetUsername, content) {
+    const { updateAfterSend } = require('./messageCache');
     if (!content || !content.trim()) throw new Error('Message content required');
     const [user, targetUser] = await Promise.all([
         User.findById(userId).select('_id username'),
@@ -137,14 +168,35 @@ async function sendMessage(userId, targetUsername, content) {
     }
     await conversation.save();
 
-    return {
+    // Prepare read receipt snapshot after save
+    const meP = (conversation.participants || []).find(p => p.userId.toString() === user._id.toString());
+    const otherP = (conversation.participants || []).find(p => p.userId.toString() === targetUser._id.toString());
+    const readReceipts = {
+        me: {
+            userId: user._id.toString(),
+            lastReadMessageId: meP && meP.lastReadMessageId ? meP.lastReadMessageId.toString() : null,
+            lastReadAt: meP ? meP.lastReadAt : null
+        },
+        partner: {
+            userId: targetUser._id.toString(),
+            lastReadMessageId: otherP && otherP.lastReadMessageId ? otherP.lastReadMessageId.toString() : null,
+            lastReadAt: otherP ? otherP.lastReadAt : null
+        }
+    };
+
+    const response = {
         _id: message._id,
         conversationId: conversation._id,
         sender: user._id,
         receiver: targetUser._id,
         content: message.content,
-        timestamp: message.timestamp
+        timestamp: message.timestamp,
+        readReceipts
     };
+
+    // Try update cache window optimistically
+    try { await updateAfterSend(conversation._id.toString(), response, readReceipts); } catch {}
+    return response;
 }
 
 async function clearChat(userId, targetUsername) {
@@ -164,6 +216,10 @@ async function clearChat(userId, targetUsername) {
     await Message.deleteMany({ conversationId: conversation._id });
     conversation.lastMessage = null;
     await conversation.save();
+    try {
+        const { clearWindow } = require('./messageCache');
+        await clearWindow(conversation._id.toString());
+    } catch {}
     return 'Chat history deleted successfully!';
 }
 
