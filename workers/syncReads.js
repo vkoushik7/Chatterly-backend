@@ -49,7 +49,8 @@ async function runOnce(batchSize = 500) {
     }
 
     if (ops.length) {
-      await Conversation.bulkWrite(ops, { ordered: false });
+      // Use native collection bulkWrite to avoid schema timestamps side-effects
+      await Conversation.collection.bulkWrite(ops, { ordered: false });
       totalOps += ops.length;
     }
   }

@@ -74,6 +74,7 @@ io.on('connection', async (socket) => {
       if (me && me.username) {
         socket.join(me.username);
       }
+      await broadcastPresenceForUser(true);
     }
   } catch {}
 

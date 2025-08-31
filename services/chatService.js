@@ -255,15 +255,16 @@ async function markReadByUsername(userId, targetUsername, lastReadMessageId) {
     }
 
     const now = new Date();
-    await Conversation.updateOne(
-        { _id: conversation._id },
+    // Use native collection update to avoid bumping updatedAt
+    await Conversation.collection.updateOne(
+        { _id: new mongoose.Types.ObjectId(conversation._id) },
         {
             $set: {
                 'participants.$[p].lastReadMessageId': new mongoose.Types.ObjectId(effectiveId),
                 'participants.$[p].lastReadAt': now
             }
         },
-        { arrayFilters: [{ 'p.userId': me._id }] }
+        { arrayFilters: [{ 'p.userId': new mongoose.Types.ObjectId(me._id) }] }
     );
 
     // Optionally zero unreadMap here in a second lightweight op if used
